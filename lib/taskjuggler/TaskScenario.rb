@@ -1840,7 +1840,9 @@ class TaskJuggler
 
       # We first have to make sure that if there are mandatory resources
       # that these are all available for the time slot.
+      # Note: These log entries can make the report file very long
       takenMandatories = []
+      #Log.msg { "BookResources:Mandatory Check: Start..." }
       @mandatories.each do |allocation|
         return unless allocation.onShift?(@currentSlotIdx)
 
@@ -1848,6 +1850,7 @@ class TaskJuggler
         # alternatives must be available.
         found = false
         allocation.candidates(@scenarioIdx).each do |candidate|
+          #Log.msg { "BookResources:Mandatory Check: Checking #{candidate.name}" }
           # When a resource group is marked mandatory, all members of the
           # group must be available.
           allAvailable = true
@@ -1870,7 +1873,23 @@ class TaskJuggler
         end
 
         # At least one mandatory resource is not available. We cannot continue.
+        Log.msg { "BookResources:Mandatory Check: At least one mandatory resource is not available. T #{@property.fullId}" } unless found
         return unless found
+        #Log.msg { "BookResources:Mandatory Check: All mandatories available. Task #{@property.fullId}" }
+      end
+
+      # Check if any persistent resources are mandatory, and don't make a
+      # booking if any of them are unavaliable 
+      @allocate.each do |allocation|
+        next unless allocation.lockedResource && allocation.mandatory
+        # Make the same check book() does to see if a booking would be succesful,
+        # and if not return.
+        allocation.lockedResource.allLeaves.each do |resource|
+          next if resource.available?(@scenarioIdx, @currentSlotIdx) &&
+               limitsOk?(@currentSlotIdx, resource) && allocation.onShift?(@currentSlotIdx)
+          Log.msg { "BookResources:Persistent Mandatory Check: Task #{@property.fullId} Bookings for slot #{@currentSlotIdx} aborted. #{allocation.lockedResource.name}, is persistent and mandatory but not avaliable." }
+          return
+        end
       end
 
       @allocate.each do |allocation|
@@ -1884,6 +1903,7 @@ class TaskJuggler
 
           if allocation.atomic &&
              locked_candidate.bookedTask(@scenarioIdx, @currentSlotIdx)
+            Log.msg { "Rolling back #{@property.fullId}."}
             rollbackBookings
             return
           end
